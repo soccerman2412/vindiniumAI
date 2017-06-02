@@ -1,0 +1,6 @@
+/Users/taylorplimpton/Downloads/vindinium-starter-csharp-master/vindinium/obj/Debug/.NETFramework,Version=v4.5.AssemblyAttribute.cs
+/Users/taylorplimpton/Downloads/vindinium-starter-csharp-master/vindinium/bin/Debug/client.exe.config
+/Users/taylorplimpton/Downloads/vindinium-starter-csharp-master/vindinium/bin/Debug/client.exe.mdb
+/Users/taylorplimpton/Downloads/vindinium-starter-csharp-master/vindinium/bin/Debug/client.exe
+/Users/taylorplimpton/Downloads/vindinium-starter-csharp-master/vindinium/obj/Debug/client.exe
+/Users/taylorplimpton/Downloads/vindinium-starter-csharp-master/vindinium/obj/Debug/client.exe.mdb
