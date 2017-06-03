@@ -29,7 +29,8 @@ namespace vindinium
 			ServerStuff serverStuff = new ServerStuff(secretKey, isTraingMode, turnAmount, serverURL, map);
 
             //create the random bot, replace this with your own bot
-            RandomBot bot = new RandomBot(serverStuff);
+            //RandomBot bot = new RandomBot(serverStuff);
+			StateMachineBot bot = new StateMachineBot (serverStuff);
 
             //now kick it all off by running the bot.
             bot.run();

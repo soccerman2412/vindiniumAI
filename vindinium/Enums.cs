@@ -8,6 +8,7 @@ namespace vindinium
 {
     enum Tile
     {
+		OFF_MAP,
         IMPASSABLE_WOOD,
         FREE,
         HERO_1,
