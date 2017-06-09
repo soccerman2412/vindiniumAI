@@ -32,13 +32,12 @@ namespace vindinium
         public const string West = "West";
     }
 
-	// starting at 0 and count up as we go down
-	// lowest weighted decision to highest
-	enum WeightedDecisions
+	enum MyHeroState
 	{
-		STAY,
+		NONE,
+		AVOID,
 		HEAL,
-		ATTACK,
-		CAPTURE_MINE
+		CAPTURE_MINE,
+		ATTACK
 	}
 }
