@@ -80,10 +80,18 @@ namespace vindinium
                 catch (WebException exception)
                 {
                     errored = true;
-                    using (var reader = new StreamReader(exception.Response.GetResponseStream()))
-                    {
-                        errorText = reader.ReadToEnd();
-                    }
+					Console.Out.WriteLine ("ServerStuff errored");
+					if (exception != null && exception.Response != null) {
+						using (StreamReader reader = new StreamReader (exception.Response.GetResponseStream ())) {
+							if (reader != null) {
+								errorText = reader.ReadToEnd ();
+							} else {
+								Console.Out.WriteLine ("ServerStuff reader was null");
+							}
+						}
+					} else {
+						Console.Out.WriteLine ("ServerStuff exception/exception.Response was null");
+					}
                 }
             }
         }

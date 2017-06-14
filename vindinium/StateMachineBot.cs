@@ -62,6 +62,8 @@ namespace vindinium
 
     class StateMachineBot
     {
+		private const int minInterestedHeroWeight = 5;
+
 		private ServerStuff serverStuff = null;
 		private List<Pos> minesPosList = new List<Pos> ();
 		private List<Pos> tavernsPosList = new List<Pos> ();
@@ -78,39 +80,42 @@ namespace vindinium
         public void run()
         {
 			//Console.Out.WriteLine("State Machine Bot running");
+			if (serverStuff != null) {
+				serverStuff.createGame ();
 
-            serverStuff.createGame();
+				if (serverStuff.errored == false) {
+					//opens up a webpage so you can view the game, doing it async so we dont time out
+					new Thread (delegate() {
+						System.Diagnostics.Process.Start (serverStuff.viewURL);
+					}).Start ();
 
-            if (serverStuff.errored == false) {
-                //opens up a webpage so you can view the game, doing it async so we dont time out
-                new Thread(delegate() {
-                    System.Diagnostics.Process.Start(serverStuff.viewURL);
-				}).Start();
+					Console.Out.WriteLine ("serverStuff.maxTurns: " + serverStuff.maxTurns);
+					Console.Out.WriteLine ("my Hero (" + serverStuff.myHero.id + ") start position: " + correctedHeroPos ().x + ", " + correctedHeroPos ().y);
+					foreach (Hero currHero in serverStuff.heroes) {
+						Pos heroPos = currHero.GetCorrectedHeroPos ();
+						Console.Out.WriteLine ("Hero (" + currHero.id + ") start position: " + heroPos.x + ", " + heroPos.y);
+					}
 
-				Console.Out.WriteLine ("serverStuff.maxTurns: " + serverStuff.maxTurns);
-				Console.Out.WriteLine("my Hero (" + serverStuff.myHero.id + ") start position: " + correctedHeroPos ().x + ", " + correctedHeroPos ().y);
-				foreach (Hero currHero in serverStuff.heroes) {
-					Pos heroPos = currHero.GetCorrectedHeroPos ();
-					Console.Out.WriteLine("Hero (" + currHero.id + ") start position: " + heroPos.x + ", " + heroPos.y);
+					// memorize key aspects of the map
+					memorizeMap ();
 				}
 
-				// memorize key aspects of the map
-				memorizeMap ();
-            }
+				while (serverStuff.finished == false && serverStuff.errored == false) {
+					string chosenMove = determineMove ();
+					Console.Out.WriteLine ("chosenMove: " + chosenMove);
+					serverStuff.moveHero (chosenMove);
 
-			while (serverStuff.finished == false && serverStuff.errored == false) {
-				string chosenMove = determineMove ();
-				Console.Out.WriteLine("chosenMove: " + chosenMove);
-				serverStuff.moveHero(chosenMove);
+					Console.Out.WriteLine ("completed turn " + serverStuff.currentTurn);
+				}
 
-                Console.Out.WriteLine("completed turn " + serverStuff.currentTurn);
-            }
+				if (serverStuff.errored) {
+					Console.Out.WriteLine ("error: " + serverStuff.errorText);
+				}
 
-            if (serverStuff.errored) {
-                Console.Out.WriteLine("error: " + serverStuff.errorText);
-            }
-
-            Console.Out.WriteLine("bot finished");
+				Console.Out.WriteLine ("bot finished");
+			} else {
+				Console.Out.WriteLine ("serverStuff was null, bot never started");
+			}
         }
 
 		private string determineMove ()
@@ -136,7 +141,6 @@ namespace vindinium
 
 
 			/****** TODO:
-			 * check if higher rank player is closer than mine
 			 * maybe check closest player near mine and health compared to my hero's health (are they near a tavern?)
 			 * maybe check if you can swing by a tavern on the way to a particular target
 			 * maybe check if we're being attacked, if so WHAT SHOULD WE DO?
@@ -161,16 +165,27 @@ namespace vindinium
 				 *      a) if the heal is less then 20 OR we're in 1st near the end of the game, we'll head for a tavern
 				 */
 
+				// trying to cut back on calls to A* path finding
+				bool attacking = false;
+				if (currentState == MyHeroState.ATTACK) {
+					if (pathList.Count >= 5 && pathList.Count % 3 == 0)
+						attacking = true;
+					else if (pathList.Count % 2 == 0)
+						attacking = true;
+				}
 
 				Pos heroOfInterestPos = null;
-				List<string> bestPathToHeroOfInterest = bestPathForClosestHeroOfInterestPos (out heroOfInterestPos);
-				// check if we were attacking and the current hero of interest is relatively close to our target position
-				bool attacking = heroOfInterestPos != null && bestPathToHeroOfInterest.Count > 0;
-				if (attacking && currentTargetPos != null && pathList.Count > 0) {
-					attacking = bestPathToHeroOfInterest.Count <= pathList.Count + 5;
+				List<string> bestPathToHeroOfInterest = new List<string> ();
+				if (!attacking) {
+					bestPathToHeroOfInterest = bestPathForClosestHeroOfInterestPos (out heroOfInterestPos);
+					// check if we were attacking and the current hero of interest is relatively close to our target position
+					attacking = heroOfInterestPos != null && bestPathToHeroOfInterest.Count > 0;
+					if (attacking && currentTargetPos != null && pathList.Count > 0) {
+						attacking = bestPathToHeroOfInterest.Count <= pathList.Count + 5;
+					}
 				}
 					
-				if (!attacking) {
+				if (!attacking && currentState != MyHeroState.ATTACK) {
 					// make sure we're not already capturing a mine
 					if (currentState != MyHeroState.CAPTURE_MINE) {
 						//Console.Out.WriteLine ("findClosestMinePos");
@@ -205,7 +220,7 @@ namespace vindinium
 							}
 						}
 					}
-				} else {
+				} else if (heroOfInterestPos != null) {
 					currentState = MyHeroState.ATTACK;
 					if (currentTargetPos == null || !currentTargetPos.EqualsPos (heroOfInterestPos)) {
 						currentTargetPos = heroOfInterestPos;
@@ -218,10 +233,11 @@ namespace vindinium
 				}
 
 
+				//Console.Out.WriteLine ("serverStuff.board.Rank: " + serverStuff.board.Rank);
 
 				// 1) Check my hero's health, if the health minus the moves to the target is less than 20 we'll need to heal first
 				// 2) Check if my hero is in first near the end of the game, if so we'll "suck our thumb"
-				bool rank1NearGameEnd = serverStuff.board.Rank == 1 && myHero.gold > 0 && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
+				bool rank1NearGameEnd = false;//serverStuff.board.Rank == 1 && myHero.gold > 0 && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
 				if (myHero.life - pathList.Count <= 20 || rank1NearGameEnd) {
 					Console.Out.WriteLine ("myHero.life: " + myHero.life);
 					Console.Out.WriteLine ("rank1NearGameEnd: " + rank1NearGameEnd);
@@ -231,7 +247,7 @@ namespace vindinium
 					bestPathList = bestPathToClosestTavern (out closestTavernPos);
 
 					if (closestTavernPos == null) {
-						Console.Out.WriteLine ("findClosestMinePositions was null");
+						Console.Out.WriteLine ("closestTavernPos was null");
 					} else if (currentTargetPos == null || !currentTargetPos.EqualsPos (closestTavernPos)) {
 						currentState = MyHeroState.HEAL;
 
@@ -246,17 +262,84 @@ namespace vindinium
 			}
 
 			if (pathList.Count > 0) {
-				// check if we're about to "enter" a tavern
 				if (currentState == MyHeroState.HEAL && pathList.Count == 1) {
 					// we're about to enter a tavern, let's see if we should heal up more than once
 					// using 49 because the tavern will heal us by 50, but each turn we lose 1 health
-					if (myHero.life + 49 < 90) {
+					// check against 140 so we'll always heal up to at least 90 of the 100 (can't go over 100)
+					if (myHero.life + 49 < 140) {
 						pathList.Add (pathList [0]);
+					}
+				} else {
+					// TODO: check if there's another hero nearby that could kill us
+					if (currentState != MyHeroState.HEAL) {
+						// we're near a tavern so we might as well heal up
+						// using 49 because the tavern will heal us by 50, but each turn we lose 1 health
+						// check against 140 so we'll always heal up to at least 90 of the 100 (can't go over 100)
+						Pos myHeroPos = myHero.GetCorrectedHeroPos ();
+						List<Pos> closestTavernPosList = findClosestTavernPositions ();
+						if (closestTavernPosList.Count > 0) {
+							Pos closestTavernPos = closestTavernPosList [0];
+							if (myHeroPos.Distance (closestTavernPos) == 1 && myHero.life + 49 < 140) {
+								if (myHeroPos.x < closestTavernPos.x) {
+									pathList.Insert (0, Direction.East);
+								} else if (myHeroPos.x > closestTavernPos.x) {
+									pathList.Insert (0, Direction.West);
+								} else if (myHeroPos.y > closestTavernPos.y) {
+									pathList.Insert (0, Direction.North);
+								} else if (myHeroPos.y < closestTavernPos.y) {
+									pathList.Insert (0, Direction.South);
+								}
+							}
+						}
+
+						// check if we're near a mine
+						List<Pos> closestMinePosList = findClosestMinePositions ();
+						if (closestMinePosList.Count > 0) {
+							Pos closestMinePos = closestMinePosList [0];
+							if (myHeroPos.Distance (closestMinePos) == 1 && myHero.life > 20) {
+								if (myHeroPos.x < closestMinePos.x) {
+									pathList.Insert (0, Direction.East);
+								} else if (myHeroPos.x > closestMinePos.x) {
+									pathList.Insert (0, Direction.West);
+								} else if (myHeroPos.y > closestMinePos.y) {
+									pathList.Insert (0, Direction.North);
+								} else if (myHeroPos.y < closestMinePos.y) {
+									pathList.Insert (0, Direction.South);
+								}
+							}
+						}
+
 					}
 				}
 
 				returnVal = pathList [0];
-				pathList.RemoveAt (0);
+				// if there's a hero in the spot we're about to move to then don't remove the path order as we'll need again until that other hero moves
+				string avoidOrder = returnVal;
+				if (currentState != MyHeroState.ATTACK) {
+					avoidOrder = avoidHeroWithinDistance (2);
+				}
+
+				if (avoidOrder != null && returnVal != avoidOrder) {
+					returnVal = avoidOrder;
+					pathList.Insert (0, oppositeDirection (returnVal));
+				} else {
+					pathList.RemoveAt (0);
+				}
+
+				/*Hero nextDoorHero = nextMoveDirectionHasHero (returnVal);
+				if (nextDoorHero == null)
+					pathList.RemoveAt (0);
+				else {
+					if (currentState == MyHeroState.HEAL) {
+						returnVal = avoidanceCorrection (returnVal);
+						pathList.Insert (0, oppositeDirection (returnVal));
+					} else if (currentState != MyHeroState.ATTACK) {
+						if (myHero.life < nextDoorHero.life || weightHeroInterest (nextDoorHero) < 3) {
+							returnVal = avoidanceCorrection (returnVal);
+							pathList.Insert (0, oppositeDirection (returnVal));
+						}
+					}
+				}*/
 
 				// check if we reached then end of our path and hopefully our target
 				if (pathList.Count == 0) {
@@ -266,6 +349,212 @@ namespace vindinium
 			}
 
 			return returnVal;
+		}
+
+		private string avoidHeroWithinDistance (int dist = 1) {
+			Hero myHero = serverStuff.myHero;
+			Pos myHeroPos = myHero.GetCorrectedHeroPos ();
+			Dictionary<string, int> weightedDirectionsDict = new Dictionary<string, int> {
+				[Direction.East]=0,
+				[Direction.West]=0,
+				[Direction.North]=0,
+				[Direction.South]=0
+			};
+			int heroesToAvoid = 0;
+			foreach (Hero currHero in serverStuff.heroes) {
+				if (currHero.id == myHero.id)
+					continue;
+
+				Pos currHeroPos = currHero.GetCorrectedHeroPos ();
+
+				if (myHeroPos.Distance (currHeroPos) <= dist) {
+					++heroesToAvoid;
+
+					if (heroesToAvoid > 1 || myHero.life < currHero.life || weightHeroInterest (currHero) < minInterestedHeroWeight) {
+						int diffX = myHeroPos.x - currHeroPos.x;
+						int diffY = myHeroPos.y - currHeroPos.y;
+						if (diffX == 0) {
+							weightedDirectionsDict [Direction.East] += 1;
+							weightedDirectionsDict [Direction.West] += 1;
+							if (diffY < 0)
+								weightedDirectionsDict [Direction.North] += 2;
+							else
+								weightedDirectionsDict [Direction.South] += 2;
+						} else if (diffY == 0) {
+							weightedDirectionsDict [Direction.North] += 1;
+							weightedDirectionsDict [Direction.South] += 1;
+							if (diffX > 0)
+								weightedDirectionsDict [Direction.East] += 2;
+							else
+								weightedDirectionsDict [Direction.West] += 2;
+						} else {
+							if (diffX > 0)
+								weightedDirectionsDict [Direction.East] += 1;
+							else
+								weightedDirectionsDict [Direction.West] += 1;
+
+							if (diffY < 0)
+								weightedDirectionsDict [Direction.North] += 1;
+							else
+								weightedDirectionsDict [Direction.South] += 1;
+						}
+					}
+				}
+			}
+
+			if (heroesToAvoid > 0) {
+				List<KeyValuePair<string, int>> sortedList = weightedDirectionsDict.ToList ();
+
+				sortedList.OrderByDescending (x => x.Value);
+
+				Console.Out.WriteLine ("Sorted avoid directions: ");
+				foreach (KeyValuePair<string, int> currPair in sortedList) {
+					Console.Out.WriteLine (currPair.Key + "with value: " + currPair.Value);
+				}
+				Console.Out.WriteLine ("Sorted avoid directions end");
+
+				int directionsWithWeight = 0;
+				Tile currTile = Tile.HERO_1;
+				foreach (KeyValuePair<string, int> currPair in sortedList) {
+					if (currPair.Value > 0) {
+						++directionsWithWeight;
+
+						switch (currPair.Key) {
+						case Direction.East:
+							currTile = tileForCoords (myHeroPos.x + 1, myHeroPos.y);
+							if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+								return Direction.East;
+							break;
+						case Direction.West:
+							currTile = tileForCoords (myHeroPos.x - 1, myHeroPos.y);
+							if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+								return Direction.West;
+							break;
+						case Direction.North:
+							currTile = tileForCoords (myHeroPos.x, myHeroPos.y - 1);
+							if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+								return Direction.North;
+							break;
+						case Direction.South:
+							currTile = tileForCoords (myHeroPos.x, myHeroPos.y + 1);
+							if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+								return Direction.South;
+							break;
+						default:
+							break;
+						}
+					}
+				}
+
+				// found a nearby hero but couldn't find a free avoidance location
+				if (directionsWithWeight > 0) {
+					Console.Out.WriteLine ("avoidHeroWithinDistance Direction.Stay");
+					return Direction.Stay;
+				}
+			}
+
+			return null;
+		}
+
+		private string oppositeDirection (string directionToOppose) {
+			switch (directionToOppose) {
+			case Direction.East:
+				return Direction.West;
+			case Direction.West:
+				return Direction.East;
+			case Direction.North:
+				return Direction.South;
+			case Direction.South:
+				return Direction.North;
+			default:
+				break;
+			}
+				
+			Console.Out.WriteLine ("oppositeDirection Direction.Stay");
+			return Direction.Stay;
+		}
+
+		private string avoidanceCorrection (string directionToAvoid) {
+			Pos myHeroPos = serverStuff.myHero.GetCorrectedHeroPos ();
+
+			Tile currTile = Tile.HERO_1;
+			switch (directionToAvoid) {
+			case Direction.East:
+				currTile = tileForCoords (myHeroPos.x, myHeroPos.y - 1);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.North;
+				currTile = tileForCoords (myHeroPos.x, myHeroPos.y + 1);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.South;
+				return Direction.West;
+			case Direction.West:
+				currTile = tileForCoords (myHeroPos.x, myHeroPos.y - 1);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.North;
+				currTile = tileForCoords (myHeroPos.x, myHeroPos.y + 1);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.South;
+				return Direction.East;
+			case Direction.North:
+				currTile = tileForCoords (myHeroPos.x + 1, myHeroPos.y);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.East;
+				currTile = tileForCoords (myHeroPos.x - 1, myHeroPos.y);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.West;
+				return Direction.South;
+			case Direction.South:
+				currTile = tileForCoords (myHeroPos.x + 1, myHeroPos.y);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.East;
+				currTile = tileForCoords (myHeroPos.x - 1, myHeroPos.y);
+				if (currTile == Tile.FREE || currTile == Tile.TAVERN)
+					return Direction.West;
+				return Direction.North;
+			default:
+				break;
+			}
+
+			Console.Out.WriteLine ("avoidanceCorrection Direction.Stay");
+			return Direction.Stay;
+		}
+
+		private Hero nextMoveDirectionHasHero (string moveDirection) {
+			Pos myHeroPos = serverStuff.myHero.GetCorrectedHeroPos ();
+			Tile destTile = Tile.FREE;
+
+			switch (moveDirection) {
+			case Direction.East:
+				destTile = tileForCoords (myHeroPos.x + 1, myHeroPos.y);
+				break;
+			case Direction.West:
+				destTile = tileForCoords (myHeroPos.x - 1, myHeroPos.y);
+				break;
+			case Direction.North:
+				destTile = tileForCoords (myHeroPos.x, myHeroPos.y - 1);
+				break;
+			case Direction.South:
+				destTile = tileForCoords (myHeroPos.x, myHeroPos.y + 1);
+				break;
+			default:
+				break;
+			}
+
+			if (destTile == Tile.HERO_1) {
+				Console.Out.WriteLine ("destination tile is Tile.HERO_1 and serverStuff.heroes [0]: " + serverStuff.heroes [0].id);
+				return serverStuff.heroes [0];
+			} else if (destTile == Tile.HERO_2) {
+				Console.Out.WriteLine ("destination tile is Tile.HERO_2 and serverStuff.heroes [1]: " + serverStuff.heroes [1].id);
+				return serverStuff.heroes [1];
+			} else if (destTile == Tile.HERO_3) {
+				Console.Out.WriteLine ("destination tile is Tile.HERO_3 and serverStuff.heroes [2]: " + serverStuff.heroes [2].id);
+				return serverStuff.heroes [2];
+			} else if (destTile == Tile.HERO_4) {
+				Console.Out.WriteLine ("destination tile is Tile.HERO_4 and serverStuff.heroes [3]: " + serverStuff.heroes [3].id);
+				return serverStuff.heroes [3];
+			}
+
+			return null;
 		}
 
 		/*private WeightedDecisions calculateDecision (int tileLimit = serverStuff.board.Length - 1)
@@ -391,7 +680,6 @@ namespace vindinium
 
 			List<string> bestPath = new List<string> ();
 			if (!findBestPathFromPosToPos (myHeroPos, targetPos, out bestPath)) {
-				currentTargetPos = null;
 				Console.Out.WriteLine (" ----- bestPathToPos NOT FOUND!!!");
 			} /*else {
 				int i = 0;
@@ -486,9 +774,10 @@ namespace vindinium
 			}
 
 			// sort the list based on the f value
-			openList.Sort (delegate (PathNode a, PathNode b) {
+			openList = openList.OrderBy (x => x.aStarF).ToList ();
+			/*openList.Sort (delegate (PathNode a, PathNode b) {
 				return a.aStarF.CompareTo (b.aStarF);
-			});
+			});*/
 
 			foreach (PathNode currNode in openList) {
 				// make sure the newly added nodes are not in the closed list already
@@ -519,6 +808,24 @@ namespace vindinium
 
 		#region Helper Methods
 
+		private double weightHeroInterest (Hero heroInQuestion) {
+			Hero myHero = serverStuff.myHero;
+
+			double gameDonePercent = (double)serverStuff.currentTurn / (double)serverStuff.maxTurns;
+			double currHeroWeight = 0;
+			currHeroWeight += ((double)(heroInQuestion.gold - myHero.gold) / 10) * gameDonePercent;
+			currHeroWeight += (double)(heroInQuestion.mineCount - myHero.mineCount) * gameDonePercent;
+			currHeroWeight += myHero.pos.Distance (heroInQuestion.pos) / ((double)serverStuff.board.Length / 2); // minimal weight since obstacles can drastically effect the path distance
+			// having less health then the currHero should weigh more heavily then having more health
+			double healthDiff = myHero.life - heroInQuestion.life;
+			if (healthDiff < 0)
+				currHeroWeight += healthDiff / 2;
+			else
+				currHeroWeight += healthDiff / 25;
+
+			return currHeroWeight;
+		}
+
 		// finds the closest hero of interest in relation to the bot (myHero)
 		// out heroOfInterestPos is null if no hero of interest is found (or if the path finding failed, which would be a bug)
 		// hero intest based on weight (see weigh explanation in method)
@@ -541,18 +848,7 @@ namespace vindinium
 					continue;
 				}
 
-				double gameDonePercent = (double)serverStuff.currentTurn / (double)serverStuff.maxTurns;
-				double currHeroWeight = 0;
-				currHeroWeight += ((double)(currHero.gold - myHero.gold) / 100) * gameDonePercent;
-				currHeroWeight += (double)(currHero.mineCount - myHero.mineCount) * gameDonePercent;
-				currHeroWeight += myHero.pos.Distance (currHero.pos) / ((double)serverStuff.board.Length / 2); // minimal weight since obstacles can drastically effect the path distance
-				// having less health then the currHero should weigh more heavily then having more health
-				int healthDiff = myHero.life - currHero.life;
-				if (healthDiff < 1) {
-					currHeroWeight -= 5;
-				} else if (healthDiff < 10) {
-					currHeroWeight -= 1;
-				}
+				double currHeroWeight = weightHeroInterest (currHero);
 
 				if (bestHeroOfInterestWeight < currHeroWeight) {
 					bestHeroOfInterestWeight = currHeroWeight;
@@ -560,7 +856,7 @@ namespace vindinium
 				}
 			}
 				
-			if (heroOfInterest != null) {
+			if (heroOfInterest != null && bestHeroOfInterestWeight >= minInterestedHeroWeight) {
 				Pos startPos = myHero.GetCorrectedHeroPos ();
 				heroOfInterestPos = heroOfInterest.GetCorrectedHeroPos ();
 
@@ -575,6 +871,8 @@ namespace vindinium
 				}
 
 				List<string> bestPathToHeroOfInterest = new List<string> ();
+				bestPathFound = false;
+				closedList.Clear ();
 				if (findBestPathFromPosToPos (startPos, heroOfInterestPos, out bestPathToHeroOfInterest))
 					returnPath.AddRange (bestPathToHeroOfInterest);
 				else {
