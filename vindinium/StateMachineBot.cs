@@ -63,6 +63,7 @@ namespace vindinium
     class StateMachineBot
     {
 		private const int minInterestedHeroWeight = 5;
+		private const double millisecondBailThreshold = 900;
 
 		private ServerStuff serverStuff = null;
 		private List<Pos> minesPosList = new List<Pos> ();
@@ -82,6 +83,11 @@ namespace vindinium
 			//Console.Out.WriteLine("State Machine Bot running");
 			if (serverStuff != null) {
 				serverStuff.createGame ();
+
+				/*if (serverStuff.errored == false) {
+					// try one more time
+					serverStuff.createGame ();
+				}*/
 
 				if (serverStuff.errored == false) {
 					//opens up a webpage so you can view the game, doing it async so we dont time out
@@ -120,6 +126,10 @@ namespace vindinium
 
 		private string determineMove ()
 		{
+			// for handling time out
+			DateTime startUtc = DateTime.UtcNow;
+			bool takingTooLong = false;
+
 			string returnVal = Direction.Stay;
 
 			Hero myHero = serverStuff.myHero;
@@ -165,80 +175,98 @@ namespace vindinium
 				 *      a) if the heal is less then 20 OR we're in 1st near the end of the game, we'll head for a tavern
 				 */
 
-				// trying to cut back on calls to A* path finding
-				bool attacking = false;
-				if (currentState == MyHeroState.ATTACK) {
-					if (pathList.Count >= 5 && pathList.Count % 3 == 0)
-						attacking = true;
-					else if (pathList.Count % 2 == 0)
-						attacking = true;
-				}
+				if (myHero.life - pathList.Count > 20) {
+					// trying to cut back on calls to A* path finding
+					bool attacking = false;
+					if (currentState == MyHeroState.ATTACK) {
+						if (pathList.Count >= 5 && pathList.Count % 3 == 0)
+							attacking = true;
+						else if (pathList.Count % 2 == 0)
+							attacking = true;
+					}
 
-				Pos heroOfInterestPos = null;
-				List<string> bestPathToHeroOfInterest = new List<string> ();
-				if (!attacking) {
-					bestPathToHeroOfInterest = bestPathForClosestHeroOfInterestPos (out heroOfInterestPos);
-					// check if we were attacking and the current hero of interest is relatively close to our target position
-					attacking = heroOfInterestPos != null && bestPathToHeroOfInterest.Count > 0;
-					if (attacking && currentTargetPos != null && pathList.Count > 0) {
-						attacking = bestPathToHeroOfInterest.Count <= pathList.Count + 5;
+					Pos heroOfInterestPos = null;
+					List<string> bestPathToHeroOfInterest = new List<string> ();
+					if (!attacking) {
+						bestPathToHeroOfInterest = bestPathForClosestHeroOfInterestPos (out heroOfInterestPos);
+						// check if we were attacking and the current hero of interest is relatively close to our target position
+						attacking = heroOfInterestPos != null && bestPathToHeroOfInterest.Count > 0;
+						if (attacking && currentTargetPos != null && pathList.Count > 0) {
+							attacking = bestPathToHeroOfInterest.Count <= pathList.Count + 5;
+						}
+					}
+					
+					if (!attacking && currentState != MyHeroState.ATTACK) {
+						// make sure we're not already capturing a mine
+						if (currentState != MyHeroState.CAPTURE_MINE) {
+							//Console.Out.WriteLine ("findClosestMinePos");
+							List<Pos> closestMinePosList = findClosestMinePositions (3);
+							if (closestMinePosList.Count > 0) {
+								//Console.Out.WriteLine ("findClosestMinePos count greater then 0");
+
+								// find the best path for each mine so we can compare which one is truly closest
+								int smallestPathLength = 99999;
+								Pos closestMinePos = null;
+								List<string> bestPathList = null;
+								int i = 0;
+								foreach (Pos currMinePos in closestMinePosList) {
+									// check our time
+									takingTooLong = DateTime.UtcNow.Subtract (startUtc).Milliseconds > millisecondBailThreshold;
+									if (takingTooLong) {
+										Console.Out.WriteLine ("takingTooLong, not checking rest of mines in list. Check " + i + " of " + closestMinePosList.Count);
+										break;
+									}
+								
+									List<string> currBestPath = bestPathToPos (currMinePos);
+									if (currBestPath.Count < smallestPathLength) {
+										smallestPathLength = currBestPath.Count;
+										bestPathList = currBestPath;
+										closestMinePos = currMinePos;
+									}
+
+									++i;
+								}
+
+								if (closestMinePos == null) {
+									Console.Out.WriteLine ("findClosestMinePositions was null");
+								} else if (currentTargetPos == null || !currentTargetPos.EqualsPos (closestMinePos)) {
+									currentState = MyHeroState.CAPTURE_MINE;
+
+									currentTargetPos = closestMinePos;
+									Console.Out.WriteLine ("currentTargetPos: " + currentTargetPos.x + ", " + currentTargetPos.y);
+									// wipe our current path and re-determine it
+									pathList.Clear ();
+
+									pathList = bestPathList;
+								}
+							}
+						}
+					} else if (heroOfInterestPos != null) {
+						currentState = MyHeroState.ATTACK;
+						if (currentTargetPos == null || !currentTargetPos.EqualsPos (heroOfInterestPos)) {
+							currentTargetPos = heroOfInterestPos;
+							Console.Out.WriteLine ("currentTargetPos: " + currentTargetPos.x + ", " + currentTargetPos.y);
+							// wipe our current path and re-determine it
+							pathList.Clear ();
+
+							pathList = bestPathToHeroOfInterest;
+						}
 					}
 				}
 					
-				if (!attacking && currentState != MyHeroState.ATTACK) {
-					// make sure we're not already capturing a mine
-					if (currentState != MyHeroState.CAPTURE_MINE) {
-						//Console.Out.WriteLine ("findClosestMinePos");
-						List<Pos> closestMinePosList = findClosestMinePositions (3);
-						if (closestMinePosList.Count > 0) {
-							//Console.Out.WriteLine ("findClosestMinePos count greater then 0");
-
-							// find the best path for each mine so we can compare which one is truly closest
-							int smallestPathLength = 99999;
-							Pos closestMinePos = null;
-							List<string> bestPathList = null;
-							foreach (Pos currMinePos in closestMinePosList) {
-								List<string> currBestPath = bestPathToPos (currMinePos);
-								if (currBestPath.Count < smallestPathLength) {
-									smallestPathLength = currBestPath.Count;
-									bestPathList = currBestPath;
-									closestMinePos = currMinePos;
-								}
-							}
-
-							if (closestMinePos == null) {
-								Console.Out.WriteLine ("findClosestMinePositions was null");
-							} else if (currentTargetPos == null || !currentTargetPos.EqualsPos (closestMinePos)) {
-								currentState = MyHeroState.CAPTURE_MINE;
-
-								currentTargetPos = closestMinePos;
-								Console.Out.WriteLine ("currentTargetPos: " + currentTargetPos.x + ", " + currentTargetPos.y);
-								// wipe our current path and re-determine it
-								pathList.Clear ();
-
-								pathList = bestPathList;
-							}
-						}
-					}
-				} else if (heroOfInterestPos != null) {
-					currentState = MyHeroState.ATTACK;
-					if (currentTargetPos == null || !currentTargetPos.EqualsPos (heroOfInterestPos)) {
-						currentTargetPos = heroOfInterestPos;
-						Console.Out.WriteLine ("currentTargetPos: " + currentTargetPos.x + ", " + currentTargetPos.y);
-						// wipe our current path and re-determine it
-						pathList.Clear ();
-
-						pathList = bestPathToHeroOfInterest;
-					}
+				// check our time
+				takingTooLong = DateTime.UtcNow.Subtract (startUtc).Milliseconds > millisecondBailThreshold;
+				if (takingTooLong) {
+					Console.Out.WriteLine ("takingTooLong, not going to check health");
 				}
-
 
 				//Console.Out.WriteLine ("serverStuff.board.Rank: " + serverStuff.board.Rank);
 
 				// 1) Check my hero's health, if the health minus the moves to the target is less than 20 we'll need to heal first
 				// 2) Check if my hero is in first near the end of the game, if so we'll "suck our thumb"
-				bool rank1NearGameEnd = false;//serverStuff.board.Rank == 1 && myHero.gold > 0 && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
-				if (myHero.life - pathList.Count <= 20 || rank1NearGameEnd) {
+				//TODO: fix rank1NearGameEnd
+				bool rank1NearGameEnd = serverStuff.board.Rank == 1 && myHero.gold > 0 && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
+				if (!takingTooLong && myHero.life - pathList.Count <= 20) {
 					Console.Out.WriteLine ("myHero.life: " + myHero.life);
 					Console.Out.WriteLine ("rank1NearGameEnd: " + rank1NearGameEnd);
 
@@ -262,14 +290,24 @@ namespace vindinium
 			}
 
 			if (pathList.Count > 0) {
+				bool shouldNotAvoid = false;
+
+				// check our time
+				takingTooLong = DateTime.UtcNow.Subtract (startUtc).Milliseconds > millisecondBailThreshold;
+				/*if (takingTooLong) {
+					Console.Out.WriteLine ("takingTooLong");
+					shouldNotAvoid = true;
+				}*/
+
 				if (currentState == MyHeroState.HEAL && pathList.Count == 1) {
 					// we're about to enter a tavern, let's see if we should heal up more than once
 					// using 49 because the tavern will heal us by 50, but each turn we lose 1 health
 					// check against 140 so we'll always heal up to at least 90 of the 100 (can't go over 100)
 					if (myHero.life + 49 < 140) {
+						shouldNotAvoid = true;
 						pathList.Add (pathList [0]);
 					}
-				} else {
+				} else if (pathList.Count > 2) {
 					// TODO: check if there's another hero nearby that could kill us
 					if (currentState != MyHeroState.HEAL) {
 						// we're near a tavern so we might as well heal up
@@ -280,6 +318,8 @@ namespace vindinium
 						if (closestTavernPosList.Count > 0) {
 							Pos closestTavernPos = closestTavernPosList [0];
 							if (myHeroPos.Distance (closestTavernPos) == 1 && myHero.life + 49 < 140) {
+								shouldNotAvoid = true;
+
 								if (myHeroPos.x < closestTavernPos.x) {
 									pathList.Insert (0, Direction.East);
 								} else if (myHeroPos.x > closestTavernPos.x) {
@@ -315,13 +355,14 @@ namespace vindinium
 				returnVal = pathList [0];
 				// if there's a hero in the spot we're about to move to then don't remove the path order as we'll need again until that other hero moves
 				string avoidOrder = returnVal;
-				if (currentState != MyHeroState.ATTACK) {
+				if (currentState != MyHeroState.ATTACK && shouldNotAvoid) {
 					avoidOrder = avoidHeroWithinDistance (2);
 				}
 
 				if (avoidOrder != null && returnVal != avoidOrder) {
 					returnVal = avoidOrder;
-					pathList.Insert (0, oppositeDirection (returnVal));
+					//pathList.Insert (0, oppositeDirection (returnVal));
+					pathList.Clear ();
 				} else {
 					pathList.RemoveAt (0);
 				}
@@ -351,7 +392,7 @@ namespace vindinium
 			return returnVal;
 		}
 
-		private string avoidHeroWithinDistance (int dist = 1) {
+		private string avoidHeroWithinDistance (double dist = 1) {
 			Hero myHero = serverStuff.myHero;
 			Pos myHeroPos = myHero.GetCorrectedHeroPos ();
 			Dictionary<string, int> weightedDirectionsDict = new Dictionary<string, int> {
@@ -810,6 +851,15 @@ namespace vindinium
 
 		private double weightHeroInterest (Hero heroInQuestion) {
 			Hero myHero = serverStuff.myHero;
+
+			// if they don't have at least 25% of the mines then we're not interested in them
+			// unless it's a smaller map then they need a higher percent
+			// TODO: TAYLOR
+			if (heroInQuestion.mineCount < 2)
+				return 0;
+
+			// TODO: TAYLOR
+			// if they're within reach of a tavern ignore them
 
 			double gameDonePercent = (double)serverStuff.currentTurn / (double)serverStuff.maxTurns;
 			double currHeroWeight = 0;

@@ -81,16 +81,22 @@ namespace vindinium
                 {
                     errored = true;
 					Console.Out.WriteLine ("ServerStuff errored");
-					if (exception != null && exception.Response != null) {
-						using (StreamReader reader = new StreamReader (exception.Response.GetResponseStream ())) {
-							if (reader != null) {
-								errorText = reader.ReadToEnd ();
-							} else {
-								Console.Out.WriteLine ("ServerStuff reader was null");
+					if (exception != null) {
+						if (exception.Response != null) {
+							using (StreamReader reader = new StreamReader (exception.Response.GetResponseStream ())) {
+								if (reader != null) {
+									errorText = reader.ReadToEnd ();
+								} else {
+									Console.Out.WriteLine ("ServerStuff reader was null");
+								}
 							}
+						} else if (exception.Message != null) {
+							Console.Out.WriteLine ("ServerStuff exception.Message: " + exception.Message);
 						}
+
+						Console.Out.WriteLine ("ServerStuff exception.Response was null");
 					} else {
-						Console.Out.WriteLine ("ServerStuff exception/exception.Response was null");
+						Console.Out.WriteLine ("ServerStuff exception was null");
 					}
                 }
             }
