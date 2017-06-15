@@ -379,7 +379,7 @@ namespace vindinium
 				// if there's a hero in the spot we're about to move to then don't remove the path order as we'll need again until that other hero moves
 				string avoidOrder = returnVal;
 				if (currentState != MyHeroState.ATTACK && !shouldNotAvoid) {
-					avoidOrder = avoidHeroWithinDistance (2);
+					avoidOrder = avoidHeroWithinDistance (2.5);
 					Console.Out.WriteLine ("avoidOrder: " + avoidOrder);
 				}
 
@@ -441,7 +441,7 @@ namespace vindinium
 				if (myHeroPos.Distance (currHeroPos) <= dist) {
 					++heroesToAvoid;
 
-					if (heroesToAvoid > 1 || myHero.life < currHero.life || weightHeroInterest (currHero) < minInterestedHeroWeight) {
+					if (heroesToAvoid > 1 || myHero.life < currHero.life /*|| weightHeroInterest (currHero) > minInterestedHeroWeight*/) {
 						int diffX = myHeroPos.x - currHeroPos.x;
 						int diffY = myHeroPos.y - currHeroPos.y;
 						if (diffX == 0) {
@@ -1041,15 +1041,13 @@ namespace vindinium
 				return myHeroPos.Distance(a).CompareTo (myHeroPos.Distance(b));
 			});
 
-			if (amountToFind > sortedList.Count) {
-				amountToFind = sortedList.Count;
-			}
-			// TODO: not looping through everything when all nearby mines are controlled by me
-			for (int i = 0; i < amountToFind; ++i) {
+			for (int i = 0; i < sortedList.Count; ++i) {
 				Pos currMinePos = sortedList[i];
 				if (tileForCoords (currMinePos.x, currMinePos.y) != heroMineTile) {
 					returnList.Add (currMinePos);
 				}
+				if (returnList.Count == amountToFind)
+					break;
 			}
 
 			return returnList;

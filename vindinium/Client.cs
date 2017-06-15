@@ -26,6 +26,7 @@ namespace vindinium
 
             //create the server stuff, when not in training mode, it doesnt matter
             //what you use as the number of turns
+			//isTraingMode = false;
 			ServerStuff serverStuff = new ServerStuff(secretKey, isTraingMode, turnAmount, serverURL, map);
 
             //create the random bot, replace this with your own bot
