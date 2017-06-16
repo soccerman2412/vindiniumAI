@@ -66,11 +66,18 @@ namespace vindinium
 		private const double millisecondBailThreshold = 900;
 
 		private ServerStuff serverStuff = null;
+
 		private Hero myHero = null;
 		private Pos myHeroPos = null;
+		private MyHeroState currentState = MyHeroState.NONE;
+
+		private Hero firstPlaceHero = null;
+
+		private bool isWorthAttacking = true;
+
 		private List<Pos> minesPosList = new List<Pos> ();
 		private List<Pos> tavernsPosList = new List<Pos> ();
-		private MyHeroState currentState = MyHeroState.NONE;
+
 		private Pos currentTargetPos = null;
 		private List<string> pathList = new List<string> ();
 
@@ -99,8 +106,14 @@ namespace vindinium
 
 					myHero = serverStuff.myHero;
 					myHeroPos = myHero.GetCorrectedHeroPos ();
+
+					if (minesPosList.Count < 12 && serverStuff.board.Length < 14) {
+						isWorthAttacking = false;
+					}
+
 					Console.Out.WriteLine ("serverStuff.maxTurns: " + serverStuff.maxTurns);
 					Console.Out.WriteLine ("my Hero (" + myHero.id + ") start position: " + myHeroPos.x + ", " + myHeroPos.y);
+
 					foreach (Hero currHero in serverStuff.heroes) {
 						Pos heroPos = currHero.GetCorrectedHeroPos ();
 						Console.Out.WriteLine ("Hero (" + currHero.id + ") start position: " + heroPos.x + ", " + heroPos.y);
@@ -114,6 +127,19 @@ namespace vindinium
 					// update vars
 					myHero = serverStuff.myHero;
 					myHeroPos = myHero.GetCorrectedHeroPos ();
+
+					int mostGold = 0;
+					int mostMines = 0;
+					foreach (Hero currHero in serverStuff.heroes) {
+						if (currHero.gold > mostGold) {
+							mostGold = currHero.gold;
+							firstPlaceHero = currHero;
+						} else if (currHero.gold == mostGold && currHero.mineCount > mostMines) {
+							mostGold = currHero.gold;
+							mostMines = currHero.mineCount;
+							firstPlaceHero = currHero;
+						}
+					}
 
 					string chosenMove = determineMove ();
 					Console.Out.WriteLine ("chosenMove: " + chosenMove);
@@ -244,21 +270,39 @@ namespace vindinium
 
 
 
-			/*switch (currentState) {
+			// check if we're in 1st place
+			bool inFirstPlace = false;
+			if (firstPlaceHero != null) {
+				inFirstPlace = firstPlaceHero.id == myHero.id;
+			}
+
+			Pos heroOfInterestPos = null;
+			List<string> bestPathToHeroOfInterest = new List<string> ();
+			bool attacking = false;
+
+			switch (currentState) {
+
 			case MyHeroState.HEAL:
 				break;
+
 			case MyHeroState.CAPTURE_MINE:
 				break;
+
 			case MyHeroState.ATTACK:
+				// trying to cut back on calls to A* path finding
+				if (pathList.Count >= 5 && pathList.Count % 3 != 0)
+					attacking = true;
+				else if (pathList.Count % 2 == 0)
+					attacking = true;
 				break;
+
 			default:
 				break;
-			}*/
+			}
 
 
 			// make sure we're not currently looking to heal
 			if (currentState != MyHeroState.HEAL) {
-				Console.Out.WriteLine ("DEBUG 1 > currentState != MyHeroState.HEAL");
 				/* Decision Tree:
 				 *    1) Find the closest of 3 mines based on the path
 				 *    2) Look for a nearby hero of interest (easy to kill, higher rank, )
@@ -268,20 +312,15 @@ namespace vindinium
 				 *      a) if the heal is less then 20 OR we're in 1st near the end of the game, we'll head for a tavern
 				 */
 
-				if (myHero.life - pathList.Count > 20) {
-					Console.Out.WriteLine ("DEBUG 2 > myHero.life - pathList.Count > 20");
-					// trying to cut back on calls to A* path finding
-					bool attacking = false;
+				if (myHero.life - pathList.Count > 20 && !inFirstPlace) {
 					if (currentState == MyHeroState.ATTACK) {
-						if (pathList.Count >= 5 && pathList.Count % 3 == 0)
+						if (pathList.Count >= 5 && pathList.Count % 3 != 0)
 							attacking = true;
 						else if (pathList.Count % 2 == 0)
 							attacking = true;
 					}
 
-					Pos heroOfInterestPos = null;
-					List<string> bestPathToHeroOfInterest = new List<string> ();
-					if (!attacking) {
+					if (isWorthAttacking && !attacking && currentState != MyHeroState.CAPTURE_MINE) {
 						bestPathToHeroOfInterest = bestPathForClosestHeroOfInterestPos (out heroOfInterestPos, closestTavernPosList);
 						// check if we were attacking and the current hero of interest is relatively close to our target position
 						attacking = heroOfInterestPos != null && bestPathToHeroOfInterest.Count > 0;
@@ -291,10 +330,8 @@ namespace vindinium
 					}
 					
 					if (!attacking && currentState != MyHeroState.ATTACK) {
-						Console.Out.WriteLine ("DEBUG 3 > !attacking && currentState != MyHeroState.ATTACK");
 						// make sure we're not already capturing a mine
 						if (currentState != MyHeroState.CAPTURE_MINE) {
-							Console.Out.WriteLine ("DEBUG 4 > currentState != MyHeroState.CAPTURE_MINE");
 							//Console.Out.WriteLine ("findClosestMinePos");
 							if (closestMinePosList.Count > 0) {
 								Console.Out.WriteLine ("findClosestMinePos count greater then 0");
@@ -337,8 +374,6 @@ namespace vindinium
 							}
 						}
 					} else if (heroOfInterestPos != null) {
-						Console.Out.WriteLine ("DEBUG 5 > heroOfInterestPos != null");
-
 						currentState = MyHeroState.ATTACK;
 						if (currentTargetPos == null || !currentTargetPos.EqualsPos (heroOfInterestPos)) {
 							currentTargetPos = heroOfInterestPos;
@@ -348,8 +383,6 @@ namespace vindinium
 
 							pathList = bestPathToHeroOfInterest;
 						}
-					} else {
-						Console.Out.WriteLine ("DEBUG 6");
 					}
 				}
 					
@@ -363,9 +396,9 @@ namespace vindinium
 
 				// 1) Check my hero's health, if the health minus the moves to the target is less than 20 we'll need to heal first
 				// 2) Check if my hero is in first near the end of the game, if so we'll "suck our thumb"
-				//TODO: fix rank1NearGameEnd
-				bool rank1NearGameEnd = serverStuff.board.Rank == 1 && myHero.gold > 0 && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
-				if (!takingTooLong && myHero.life - pathList.Count <= 20) {
+				bool rank1NearGameEnd = inFirstPlace && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
+				bool shouldHeal = inFirstPlace || (myHero.life - pathList.Count <= 20) || rank1NearGameEnd;
+				if (!takingTooLong && shouldHeal) {
 					Console.Out.WriteLine ("myHero.life: " + myHero.life);
 					Console.Out.WriteLine ("rank1NearGameEnd: " + rank1NearGameEnd);
 
@@ -373,7 +406,13 @@ namespace vindinium
 					Pos closestTavernPos = null;
 					bestPathList = bestPathToClosestTavern (out closestTavernPos, closestTavernPosList);
 
-					if (closestTavernPos == null) {
+					// if we're headed for a mine and it's closer than a tavern and we don't currently have a lot of mines simply commit suicide
+					int minThreshold = (int)Math.Round ((double)minesPosList.Count * 0.1);
+					minThreshold = minThreshold < 2 ? 2 : minThreshold;
+					// TODO: check against mine path in case we're already in the heal state
+					if (currentState == MyHeroState.CAPTURE_MINE && pathList.Count < bestPathList.Count && myHero.mineCount <= minThreshold) {
+						Console.Out.WriteLine ("low on health but mine is closer than tavern");
+					} else if (closestTavernPos == null) {
 						Console.Out.WriteLine ("closestTavernPos was null");
 					} else if (currentTargetPos == null || !currentTargetPos.EqualsPos (closestTavernPos)) {
 						currentState = MyHeroState.HEAL;
@@ -389,8 +428,6 @@ namespace vindinium
 			}
 
 			if (pathList.Count > 0) {
-				Console.Out.WriteLine ("DEBUG 7 > pathList.Count > 0");
-
 				bool shouldNotAvoid = false;
 
 				// check our time
@@ -401,7 +438,6 @@ namespace vindinium
 				}*/
 
 				if (currentState == MyHeroState.HEAL && pathList.Count == 1) {
-					Console.Out.WriteLine ("DEBUG 8 > currentState == MyHeroState.HEAL && pathList.Count == 1");
 					// we're about to enter a tavern, let's see if we should heal up more than once
 					// using 49 because the tavern will heal us by 50, but each turn we lose 1 health
 					// check against 140 so we'll always heal up to at least 90 of the 100 (can't go over 100)
@@ -410,10 +446,6 @@ namespace vindinium
 						pathList.Add (pathList [0]);
 					}
 				} else if (pathList.Count > 2) {
-					Console.Out.WriteLine ("DEBUG 9 > pathList.Count > 2");
-					// TODO: check if there's another hero nearby that could kill us
-					if (currentState != MyHeroState.HEAL) {
-						Console.Out.WriteLine ("DEBUG 10 > currentState != MyHeroState.HEAL");
 						// we're near a tavern so we might as well heal up
 						// using 49 because the tavern will heal us by 50, but each turn we lose 1 health
 						// check against 140 so we'll always heal up to at least 90 of the 100 (can't go over 100)
@@ -436,8 +468,9 @@ namespace vindinium
 							}
 						}
 
+					if (currentState != MyHeroState.HEAL) {
 						// check if we're near a mine
-						if (closestMinePosList.Count > 0) {
+						if (closestMinePosList.Count > 0 && currentState != MyHeroState.ATTACK) {
 							Console.Out.WriteLine ("--closestMinePosList.Count > 0");
 
 							Pos closestMinePos = closestMinePosList [0];
@@ -459,9 +492,9 @@ namespace vindinium
 
 				returnVal = pathList [0];
 				Console.Out.WriteLine ("returnVal: " + returnVal);
-				// if there's a hero in the spot we're about to move to then don't remove the path order as we'll need again until that other hero moves
+				// if we're not within reach of our target and not attacking then check if we need to avoid (unless told to ignore avoid logic)
 				string avoidOrder = returnVal;
-				if (currentState != MyHeroState.ATTACK && !shouldNotAvoid) {
+				if (pathList.Count > 1 && currentState != MyHeroState.ATTACK && !shouldNotAvoid) {
 					avoidOrder = avoidHeroWithinDistance (2.5);
 					Console.Out.WriteLine ("avoidOrder: " + avoidOrder);
 				}
@@ -873,9 +906,9 @@ namespace vindinium
 		#region Helper Methods
 
 		private double weightHeroInterest (Hero heroInQuestion) {
-			// if they don't have at least 25% of the mines then we're not interested in them
+			// if they don't have at least reasonable percentage of the mines then we're not interested in them
 			// unless it's a smaller map then they need at least 2
-			int minThreshold = (int)Math.Round ((double)heroInQuestion.mineCount * 0.25);
+			int minThreshold = (int)Math.Round ((double)minesPosList.Count * 0.2);
 			minThreshold = minThreshold < 2 ? 2 : minThreshold;
 			if (heroInQuestion.mineCount < minThreshold)
 				return 0;
@@ -889,7 +922,7 @@ namespace vindinium
 
 			double gameDonePercent = (double)serverStuff.currentTurn / (double)serverStuff.maxTurns;
 			double currHeroWeight = 0;
-			currHeroWeight += ((double)(heroInQuestion.gold - myHero.gold) / 10) * gameDonePercent;
+			currHeroWeight += ((double)(heroInQuestion.gold - myHero.gold) / 20) * gameDonePercent;
 			currHeroWeight += (double)(heroInQuestion.mineCount - myHero.mineCount) * gameDonePercent;
 			currHeroWeight += myHero.pos.Distance (heroInQuestion.pos) / ((double)serverStuff.board.Length / 2); // minimal weight since obstacles can drastically effect the path distance
 			// having less health then the currHero should weigh more heavily then having more health
