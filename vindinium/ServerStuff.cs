@@ -9,6 +9,21 @@ using System.Threading.Tasks;
 
 namespace vindinium
 {
+	class MyWebClient : WebClient
+	{
+		private int timeOutInMill = 60 * 1000; // 1 minute
+		public MyWebClient (int timeOutInMilliseconds = (60 * 1000)) {
+			timeOutInMill = timeOutInMilliseconds;
+		}
+
+		protected override WebRequest GetWebRequest(Uri uri)
+		{
+			WebRequest w = base.GetWebRequest(uri);
+			w.Timeout = timeOutInMill;
+			return w;
+		}
+	}
+
     class ServerStuff
     {
         private string key;
@@ -69,7 +84,7 @@ namespace vindinium
             if (map != null) myParameters += "&map=" + map;
 
             //make the request
-            using (WebClient client = new WebClient())
+			using (MyWebClient client = new MyWebClient(5 * 60 * 1000))
             {
                 client.Headers[HttpRequestHeader.ContentType] = "application/x-www-form-urlencoded";
                 try
