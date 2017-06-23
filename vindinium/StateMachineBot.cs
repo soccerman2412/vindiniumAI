@@ -390,7 +390,7 @@ namespace vindinium
 				// 1) Check my hero's health, if the health minus the moves to the target is less than 20 we'll need to heal first
 				// 2) Check if my hero is in first near the end of the game, if so we'll "suck our thumb"
 				bool rank1NearGameEnd = inFirstPlace && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
-				bool inFirstPlaceByALot = inFirstPlace && weightHeroInterest (secondPlaceHero) <= 2;
+				bool inFirstPlaceByALot = firstPlaceHero.gold - secondPlaceHero.gold > (serverStuff.maxTurns * 0.25) * (minesPosList.Count * 0.125);
 				bool shouldHeal = inFirstPlaceByALot || (myHero.life - pathList.Count <= 20) || rank1NearGameEnd;
 				if (!takingTooLong && shouldHeal) {
 					Console.Out.WriteLine ("inFirstPlace: " + inFirstPlace);
@@ -468,12 +468,12 @@ namespace vindinium
 				} else if (pathList.Count > 2) {
 					// we're near a tavern so we might as well heal up
 					// using 49 because the tavern will heal us by 50, but each turn we lose 1 health
-					// check against 140 so we'll always heal up to at least 90 of the 100 (can't go over 100)
+					// check against 125 so we'll always heal up to at least 75 of the 100 (can't go over 100)
 					if (closestTavernPosList.Count > 0) {
 						Console.Out.WriteLine ("--closestTavernPosList.Count > 0");
 
 						Pos closestTavernPos = closestTavernPosList [0];
-						if (myHeroPos.Distance (closestTavernPos) == 1 && myHero.life + 49 < 140) {
+						if (myHeroPos.Distance (closestTavernPos) == 1 && myHero.life + 49 < 125) {
 							shouldNotAvoid = true;
 
 							if (myHeroPos.x < closestTavernPos.x) {
@@ -1011,7 +1011,7 @@ namespace vindinium
 			double gameDonePercent = (double)serverStuff.currentTurn / (double)serverStuff.maxTurns;
 			gameDonePercent /= 0.9; // normalize to 90% of the game so we have longer to react if we want to take out a hero late in the game
 			double currHeroWeight = 0;
-			currHeroWeight += ((double)(heroInQuestion.gold - myHero.gold) / 20) * gameDonePercent;
+			currHeroWeight += ((double)(heroInQuestion.gold - myHero.gold) / (8 * minesPosList.Count) ) * gameDonePercent;
 			currHeroWeight += (double)(heroInQuestion.mineCount - myHero.mineCount) * gameDonePercent;
 			currHeroWeight += myHero.pos.Distance (heroInQuestion.pos) / ((double)serverStuff.board.Length / 2); // minimal weight since obstacles can drastically effect the path distance
 			// having less health then the currHero should weigh more heavily then having more health
