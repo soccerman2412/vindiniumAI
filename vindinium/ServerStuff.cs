@@ -84,7 +84,7 @@ namespace vindinium
             if (map != null) myParameters += "&map=" + map;
 
             //make the request
-			using (MyWebClient client = new MyWebClient(5 * 60 * 1000))
+			using (MyWebClient client = new MyWebClient(10 * 60 * 1000))
             {
                 client.Headers[HttpRequestHeader.ContentType] = "application/x-www-form-urlencoded";
                 try
