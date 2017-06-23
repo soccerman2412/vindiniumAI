@@ -457,7 +457,7 @@ namespace vindinium
 					shouldNotAvoid = true;
 				}*/
 
-				if (currentState == MyHeroState.HEAL && pathList.Count == 1) {
+				if (currentState == MyHeroState.HEAL && pathList.Count <= 2) {
 					// we're about to enter a tavern, let's see if we should heal up more than once
 					// using 49 because the tavern will heal us by 50, but each turn we lose 1 health
 					// check against 140 so we'll always heal up to at least 90 of the 100 (can't go over 100)
@@ -521,7 +521,7 @@ namespace vindinium
 
 				if (avoidOrder != null && !returnVal.Equals (avoidOrder)) {
 					// if we're headed for a mine and it's close simply commit suicide so the other hero doesn't get your mines
-					if (currentState == MyHeroState.CAPTURE_MINE && pathList.Count < 2) {
+					if (currentState == MyHeroState.CAPTURE_MINE && pathList.Count <= 2) {
 						Console.Out.WriteLine ("avoiding but mine is close");
 						shouldNotAvoid = true;
 					}
