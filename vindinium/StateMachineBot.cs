@@ -14,7 +14,7 @@ namespace vindinium
 			if (useManhattan)
 				return Math.Abs (thisPos.x - otherPos.x) + Math.Abs (thisPos.y - otherPos.y);
 
-			// Euclidean/Diagonal Distance
+			// Euclidean Distance
 			return Math.Sqrt (Math.Pow (thisPos.x - otherPos.x, 2) + Math.Pow (thisPos.y - otherPos.y, 2));
 		}
 
@@ -390,7 +390,7 @@ namespace vindinium
 				// 1) Check my hero's health, if the health minus the moves to the target is less than 20 we'll need to heal first
 				// 2) Check if my hero is in first near the end of the game, if so we'll "suck our thumb"
 				bool rank1NearGameEnd = inFirstPlace && (float)serverStuff.currentTurn / (float)serverStuff.maxTurns >= 0.95f;
-				bool inFirstPlaceByALot = firstPlaceHero.gold - secondPlaceHero.gold > (serverStuff.maxTurns * 0.25) * (minesPosList.Count * 0.125);
+				bool inFirstPlaceByALot = inFirstPlace && firstPlaceHero.gold - secondPlaceHero.gold > (serverStuff.maxTurns * 0.25) * (minesPosList.Count * 0.125);
 				bool shouldHeal = inFirstPlaceByALot || (myHero.life - pathList.Count <= 20) || rank1NearGameEnd;
 				if (!takingTooLong && shouldHeal) {
 					Console.Out.WriteLine ("inFirstPlace: " + inFirstPlace);
@@ -515,12 +515,12 @@ namespace vindinium
 				// if we're not within reach of our target and not attacking then check if we need to avoid (unless told to ignore avoid logic)
 				string avoidOrder = returnVal;
 				if (pathList.Count > 1 && currentState != MyHeroState.ATTACK && !shouldNotAvoid) {
-					avoidOrder = avoidHeroWithinDistance (2.5);
+					avoidOrder = avoidHeroWithinDistance (3);
 					Console.Out.WriteLine ("avoidOrder: " + avoidOrder);
 				}
 
 				if (avoidOrder != null && !returnVal.Equals (avoidOrder)) {
-					// if we're headed for a mine and it's close simply commit suicide so the other hero doesn't get your mines
+					// if we're headed for a mine and it's close simply commit suicide so the other hero doesn't get our mines
 					if (currentState == MyHeroState.CAPTURE_MINE && pathList.Count <= 2) {
 						Console.Out.WriteLine ("avoiding but mine is close");
 						shouldNotAvoid = true;
@@ -537,7 +537,7 @@ namespace vindinium
 						Pos closestMinePos = null;
 						bestPathList = bestPathToClosestMine (out closestMinePos, closestMinePosList);
 
-						if (closestMinePos != null && bestPathList.Count < pathList.Count) {
+						if (closestMinePos != null && bestPathList.Count <= 2) {
 							shouldNotAvoid = true;
 
 							currentState = MyHeroState.CAPTURE_MINE;
@@ -608,7 +608,7 @@ namespace vindinium
 
 				Pos currHeroPos = currHero.GetCorrectedHeroPos ();
 
-				if (myHeroPos.Distance (currHeroPos) <= dist) {
+				if (myHeroPos.Distance (currHeroPos, true) <= dist) {
 					++heroesToAvoid;
 
 					if (heroesToAvoid > 1 || myHero.life < currHero.life) {
@@ -882,8 +882,8 @@ namespace vindinium
 			adjPos.x = currentPos.x;
 			adjPos.y = currentPos.y - 1;
 			Tile currTile = tileForCoords (adjPos.x, adjPos.y);
-			g = currentPos.Distance (adjPos);
-			h = adjPos.Distance (targetPos);
+			g = currentPos.Distance (adjPos, true);
+			h = adjPos.Distance (targetPos, true);
 			f = g + h;
 			adjNode = new PathNode (adjPos, f);
 			if (adjPos.EqualsPos (targetPos)) {
@@ -899,8 +899,8 @@ namespace vindinium
 				adjPos.x = currentPos.x + 1;
 				adjPos.y = currentPos.y;
 				currTile = tileForCoords (adjPos.x, adjPos.y);
-				g = currentPos.Distance (adjPos);
-				h = adjPos.Distance (targetPos);
+				g = currentPos.Distance (adjPos, true);
+				h = adjPos.Distance (targetPos, true);
 				f = g + h;
 				adjNode = new PathNode (adjPos, f);
 				if (adjPos.EqualsPos (targetPos)) {
@@ -918,8 +918,8 @@ namespace vindinium
 				adjPos.x = currentPos.x;
 				adjPos.y = currentPos.y + 1;
 				currTile = tileForCoords (adjPos.x, adjPos.y);
-				g = currentPos.Distance (adjPos);
-				h = adjPos.Distance (targetPos);
+				g = currentPos.Distance (adjPos, true);
+				h = adjPos.Distance (targetPos, true);
 				f = g + h;
 				adjNode = new PathNode (adjPos, f);
 				if (adjPos.EqualsPos (targetPos)) {
@@ -937,8 +937,8 @@ namespace vindinium
 				adjPos.x = currentPos.x - 1;
 				adjPos.y = currentPos.y;
 				currTile = tileForCoords (adjPos.x, adjPos.y);
-				g = currentPos.Distance (adjPos);
-				h = adjPos.Distance (targetPos);
+				g = currentPos.Distance (adjPos, true);
+				h = adjPos.Distance (targetPos, true);
 				f = g + h;
 				adjNode = new PathNode (adjPos, f);
 				if (adjPos.EqualsPos (targetPos)) {
@@ -1004,7 +1004,7 @@ namespace vindinium
 			// if they're within reach of a tavern ignore them
 			Pos currHeroInQuestionPos = heroInQuestion.GetCorrectedHeroPos ();
 			foreach (Pos currTavernPos in tavernsPosList) {
-				if (currTavernPos.Distance (currHeroInQuestionPos) <= 1.5)
+				if (currTavernPos.Distance (currHeroInQuestionPos, true) <= 2)
 					return 0;
 			}
 
